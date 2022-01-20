@@ -19,7 +19,7 @@ const INFO_KEYS = [
   "current",
   "frequency",
   "power-factor",
-  "consumtion",
+  "wattage",
   "accumulate",
   "price",
   "co2",
@@ -91,4 +91,52 @@ export const createAIPMConnector = async (connectionInfo: {
       return await send([0x51, 0x18, 0x39, 0x00, 0xfb, 0x71, 0x0d]);
     },
   };
+};
+
+export interface AIPM {
+  mac: string;
+  ip: string;
+  alias: string;
+  connector?: {
+    on(): Promise<number>;
+    off(): Promise<number>;
+    getInfoForever(listener: (info: Info) => void): Promise<number>;
+  };
+}
+
+export const seekAIPM = (broadcastaddr: string): Promise<AIPM[]> => {
+  const addr: Deno.NetAddr = {
+    transport: "udp",
+    port: 4999,
+    hostname: broadcastaddr,
+  };
+  const socket = Deno.listenDatagram({
+    port: 4999,
+    transport: "udp",
+    hostname: "0.0.0.0",
+  });
+
+  socket.send(new Uint8Array([0x50, 0x4d, 0x20, 0x52, 0x65, 0x71, 0x21]), addr);
+
+  const aipm: AIPM[] = [];
+
+  return new Promise((resolve) => {
+    const receiveAIPM = setInterval(async () => {
+      const data = await socket.receive();
+      const [mac, ip, alias] = new TextDecoder().decode(data[0]).split("/");
+      if (alias) {
+        if (!aipm.find((e) => e.mac === mac)) {
+          aipm.push({
+            mac,
+            ip,
+            alias,
+          });
+        }
+      }
+    }, 10);
+    setTimeout(() => {
+      clearInterval(receiveAIPM);
+      resolve(aipm);
+    }, 5500);
+  });
 };
